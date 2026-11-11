@@ -269,7 +269,9 @@ function setLibrary(files) {
 }
 
 async function init() {
-  if (!await connect()) { $('connection').textContent = '로그인 필요'; return; }
+  const connected = await connect();
+  if (connected === 'pending') { $('connection').textContent = '배포 준비 중'; notice('서버 연결을 준비 중입니다. 배포가 끝난 뒤 다시 열어 주세요.'); return; }
+  if (!connected) { $('connection').textContent = '로그인 필요'; return; }
   const [user, files, lists] = await Promise.all([api('me'), api('library'), api('playlists')]);
   $('connection').textContent = `Drive 연결됨 · ${user.name}`;
   $('login').hidden = true;

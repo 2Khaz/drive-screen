@@ -35,7 +35,7 @@ export async function connect() {
   const response = await fetch(new URL('./config.json', location.href), { cache: 'no-store' });
   if (!response.ok) throw new Error('플레이어 설정을 가져오지 못했습니다.');
   config = await response.json();
-  if (!config.apiBase || !config.discordClientId) throw new Error('서버 연결을 준비 중입니다. 배포가 끝난 뒤 다시 열어 주세요.');
+  if (!config.apiBase || !config.discordClientId) return 'pending';
   if (embedded) {
     const sdk = new DiscordSDK(config.discordClientId);
     await sdk.ready();
