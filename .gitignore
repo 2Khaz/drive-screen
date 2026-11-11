@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+*.pem
+*-key.json
+drive-key.json
+config.local.json
+wrangler.local.jsonc
+.wrangler/
+test/fixtures/
+*.log

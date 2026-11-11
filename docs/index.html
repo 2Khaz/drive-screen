@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#13131c">
+  <title>Drive Screen</title>
+  <link rel="icon" type="image/png" href="./icon.png">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="brand"><img class="brand-icon" src="./icon.png" alt=""><span>Drive Screen</span></div>
+    <span id="connection" class="badge">연결 확인 중</span>
+  </header>
+  <main>
+    <div id="notice" role="status" hidden></div>
+    <button id="login" class="primary" type="button" hidden>Discord로 로그인</button>
+    <section class="workspace" id="workspace" hidden>
+      <div class="watch">
+        <div class="player">
+          <div id="placeholder" class="placeholder">
+            <span aria-hidden="true" class="hero-play">▶</span>
+            <p>내 드라이브, 내 재생목록</p>
+            <span>목록에서 영상을 선택해 주세요.</span>
+          </div>
+          <video id="video" controls playsinline preload="metadata" aria-label="영상 재생기" hidden></video>
+        </div>
+        <div class="player-details">
+          <div><div class="eyebrow">지금 재생</div><h1 id="now-playing">영상을 골라 주세요</h1><p id="queue-info" class="muted"></p></div>
+          <div class="transport" aria-label="재생 순서">
+            <button id="previous" type="button" aria-label="이전 영상" title="이전 영상">⏮</button>
+            <button id="next" type="button" aria-label="다음 영상" title="다음 영상">⏭</button>
+            <button id="shuffle" type="button" aria-pressed="false">셔플</button>
+            <button id="repeat" type="button" aria-label="반복 모드 끔">반복 끔</button>
+            <button id="pip" type="button" aria-pressed="false" disabled>작은 창(PiP)</button>
+          </div>
+        </div>
+        <p id="playback-help" class="playback-help muted">다른 작업 중에도 재생할 수 있습니다. 절전 모드나 모바일 앱의 백그라운드 제한에서는 멈출 수 있습니다. 작은 창은 영상을 선택한 뒤 사용할 수 있습니다.</p>
+      </div>
+      <aside class="sidebar" aria-label="재생목록 및 보관함">
+        <section class="panel playlists">
+          <div class="panel-heading"><h2>재생목록</h2><button id="new-list" type="button">＋ 새 목록</button></div>
+          <label for="list-picker" class="sr-only">재생목록 선택</label>
+          <select id="list-picker"></select>
+          <div class="list-actions">
+            <button class="primary" id="play-list" type="button">▶ 목록 재생</button>
+            <button id="rename-list" type="button">이름 변경</button>
+            <button id="delete-list" type="button">삭제</button>
+          </div>
+          <p id="list-empty" class="empty muted" hidden></p>
+          <ol id="list-items" class="items"></ol>
+        </section>
+        <section class="panel library">
+          <div class="panel-heading"><h2>영상 보관함 <span id="library-count" class="count"></span></h2><button id="refresh" type="button">새로고침</button></div>
+          <label for="search" class="sr-only">영상 검색</label>
+          <input id="search" type="search" placeholder="파일 이름 검색" autocomplete="off">
+          <p id="library-empty" class="empty muted" hidden></p>
+          <ul id="library-items" class="items"></ul>
+        </section>
+      </aside>
+    </section>
+  </main>
+  <dialog id="list-dialog" aria-labelledby="dialog-title">
+    <form id="list-form">
+      <h2 id="dialog-title"></h2>
+      <label id="dialog-label" for="list-name">목록 이름</label>
+      <input id="list-name" maxlength="80" autocomplete="off">
+      <p id="dialog-description" class="muted" hidden></p>
+      <div class="dialog-actions"><button id="cancel" type="button">취소</button><button id="confirm" class="primary" type="submit">저장</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

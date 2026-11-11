@@ -1,0 +1,23 @@
+{
+  "name": "drive-screen-cloud",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test",
+    "api:dev": "wrangler dev --local",
+    "api:deploy": "wrangler deploy",
+    "db:local": "wrangler d1 migrations apply DB --local",
+    "db:remote": "wrangler d1 migrations apply DB --remote"
+  },
+  "dependencies": {
+    "@discord/embedded-app-sdk": "2.5.0",
+    "mp4box": "2.5.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "drive-screen-api",
+  "main": "worker/index.mjs",
+  "compatibility_date": "2026-11-12",
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "drive-screen",
+      "database_id": "REPLACE_WITH_DATABASE_ID",
+      "migrations_dir": "worker/migrations"
+    }
+  ]
+}
