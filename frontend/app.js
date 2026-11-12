@@ -1,9 +1,13 @@
 import { nextQueue, reorderQueue, startQueue } from './queue.js';
 import { api, connect, startLogin, openInBrowser, isDiscordActivity, takePlaybackResume, capturePlaybackResume } from './transport.js';
 import { DrivePlayer } from './media.js';
+import { AudioPlayer } from './audio.js';
+import { CoverPip } from './cover-pip.js';
+import { CoverImages } from './covers.js';
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
+const audio = $('audio');
 const listPicker = $('list-picker');
 const dialog = $('list-dialog');
 const pipButton = $('pip');
@@ -34,8 +38,37 @@ function notice(message = '', error = false) {
 }
 
 function explain(error) { notice(error.message, true); }
-const player = new DrivePlayer(video, explain);
+const videoPlayer = new DrivePlayer(video, explain);
+const audioPlayer = new AudioPlayer(audio);
+const coverPip = new CoverPip(video, $('audio-art'));
+const covers = new CoverImages($('audio-art'), updateMetadata);
+let audioMode = false;
+const activeMedia = () => audioMode ? audio : video;
+const player = {
+  async load(id) {
+    const file = filesById.get(id);
+    const nextAudio = file?.kind === 'audio';
+    audioPlayer.close();
+    if (!nextAudio || !audioMode) { coverPip.stop(); videoPlayer.close(); }
+    audioMode = nextAudio;
+    audio.hidden = $('audio-art').hidden = $('cover-actions').hidden = !nextAudio;
+    if (nextAudio) {
+      covers.load(file).catch(error => { if (currentFile() === id && error.status !== 404) explain(error); });
+      coverPip.start();
+      await audioPlayer.load(id);
+    } else { await videoPlayer.load(id); }
+  },
+  close() { audioPlayer.close(); coverPip.stop(); videoPlayer.close(); },
+};
 let loadVersion = 0;
+
+function updateMetadata() {
+  if (!('mediaSession' in navigator) || !('MediaMetadata' in window)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: $('now-playing').textContent, artist: 'Drive Screen', album: queueName,
+    ...(audioMode ? { artwork: [{ src: $('audio-art').src }] } : {}),
+  });
+}
 
 function selectedList() { return playlists.find(({ id }) => id === selectedId); }
 function currentFile() { return queue?.order[queue.index]; }
@@ -68,7 +101,7 @@ function renderLists() {
   $('rename-list').disabled = !list || saving;
   $('delete-list').disabled = !list || saving;
   $('list-empty').hidden = Boolean(list?.items.length);
-  $('list-empty').textContent = list ? '아래 보관함에서 ＋를 눌러 영상을 담으세요.' : '새 목록을 만들면 원하는 영상만 모아둘 수 있습니다.';
+  $('list-empty').textContent = list ? '아래 보관함에서 ＋를 눌러 파일을 담으세요.' : '새 목록을 만들면 원하는 파일만 모아둘 수 있습니다.';
   const rows = (list?.items || []).map((id, index) => {
     const file = filesById.get(id);
     const title = file?.name ?? '폴더에서 찾을 수 없는 영상';
@@ -96,13 +129,13 @@ function renderLibrary() {
   const results = library.filter(({ name }) => name.toLocaleLowerCase('ko').includes(search));
   $('library-count').textContent = search ? `${results.length} / ${library.length}` : `${library.length}개`;
   $('library-empty').hidden = Boolean(results.length);
-  $('library-empty').textContent = search ? '검색과 일치하는 영상이 없습니다.' : '연결된 폴더에 재생할 MP4가 없습니다.';
+  $('library-empty').textContent = search ? '검색과 일치하는 영상이 없습니다.' : '연결된 폴더에 재생할 MP4·MP3가 없습니다.';
   const list = selectedList();
   const selectedItems = new Set(list?.items);
   const rows = results.map(({ id, name }) => {
     const row = document.createElement('li');
     row.classList.toggle('current', id === currentFile());
-    const play = makeButton(name, `${name} 재생`, 'title', () => begin(library.map((file) => file.id), id, '영상 보관함'));
+    const play = makeButton(name, `${name} 재생`, 'title', () => begin(library.map((file) => file.id), id, '미디어 보관함'));
     if (id === currentFile()) play.setAttribute('aria-current', 'true');
     const added = selectedItems.has(id);
     const add = makeButton(added ? '✓' : '＋', `${name} ${added ? '담겨 있음' : '목록에 담기'}`, 'icon', () => {
@@ -150,20 +183,21 @@ async function continueInBrowser() {
   openingBrowser = true;
   $('open-browser').disabled = true;
   try {
-    await openInBrowser(currentFile() ? { fileId: currentFile(), time: video.currentTime, playlistId: selectedId, repeat, shuffle } : null);
-    if (currentFile()) video.pause();
+    await openInBrowser(currentFile() ? { fileId: currentFile(), time: activeMedia().currentTime, playlistId: selectedId, repeat, shuffle } : null);
+    if (currentFile()) activeMedia().pause();
   } finally { openingBrowser = false; $('open-browser').disabled = false; }
 }
 
 function updateMediaSession() {
   if (!('mediaSession' in navigator)) return;
   const session = navigator.mediaSession;
-  session.playbackState = !queue ? 'none' : video.paused ? 'paused' : 'playing';
-  if (session.setPositionState && Number.isFinite(video.duration) && video.duration > 0) {
+  const media = activeMedia();
+  session.playbackState = !queue ? 'none' : media.paused ? 'paused' : 'playing';
+  if (session.setPositionState && Number.isFinite(media.duration) && media.duration > 0) {
     session.setPositionState({
-      duration: video.duration,
-      playbackRate: video.playbackRate,
-      position: Math.min(video.currentTime, video.duration),
+      duration: media.duration,
+      playbackRate: media.playbackRate,
+      position: Math.min(media.currentTime, media.duration),
     });
   }
 }
@@ -233,7 +267,7 @@ async function deleteList(list) {
 }
 
 function playVideo() {
-  video.play().catch((error) => {
+  activeMedia().play().catch((error) => {
     if (error.name === 'NotAllowedError') notice('재생기에서 ▶를 눌러 주세요.');
     else if (error.name !== 'AbortError') notice('영상을 재생할 수 없습니다. 파일 권한과 영상 코덱을 확인해 주세요.', true);
   });
@@ -245,20 +279,19 @@ async function loadCurrent(startTime = 0) {
   $('placeholder').hidden = true;
   video.hidden = false;
   $('now-playing').textContent = filesById.get(id)?.name || '영상';
-  if ('mediaSession' in navigator && 'MediaMetadata' in window) {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: $('now-playing').textContent, artist: 'Drive Screen', album: queueName });
-  }
-  notice('영상을 불러오는 중입니다…');
+  notice('파일을 불러오는 중입니다…');
   render();
   try {
     await player.load(id);
     if (version !== loadVersion) return;
+    updateMetadata();
+    const media = activeMedia();
     if (startTime > 0) {
       const resume = () => {
-        if (version === loadVersion && Number.isFinite(video.duration) && video.duration > 0) video.currentTime = Math.min(startTime, Math.max(0, video.duration - 0.25));
+        if (version === loadVersion && Number.isFinite(media.duration) && media.duration > 0) media.currentTime = Math.min(startTime, Math.max(0, media.duration - 0.25));
       };
-      if (video.readyState) resume();
-      else video.addEventListener('loadedmetadata', resume, { once: true });
+      if (media.readyState) resume();
+      else media.addEventListener('loadedmetadata', resume, { once: true });
     }
     notice();
     playVideo();
@@ -283,7 +316,7 @@ function advance() {
 
 function previousVideo() {
   if (!queue) return;
-  if (video.currentTime > 3 || queue.index === 0) { video.currentTime = 0; playVideo(); return; }
+  if (activeMedia().currentTime > 3 || queue.index === 0) { activeMedia().currentTime = 0; playVideo(); return; }
   queue = { ...queue, index: queue.index - 1 };
   loadCurrent();
 }
@@ -316,7 +349,7 @@ function resumePlayback() {
     if (list) selectedId = list.id;
     shuffle = resume.shuffle;
     repeat = resume.repeat;
-    begin(list ? playable(list.items) : library.map(file => file.id), resume.fileId, list?.name || '영상 보관함', resume.time);
+    begin(list ? playable(list.items) : library.map(file => file.id), resume.fileId, list?.name || '미디어 보관함', resume.time);
   } else if (resume) notice('이전 영상을 연결된 Drive 폴더에서 찾을 수 없습니다.', true);
 }
 
@@ -378,28 +411,57 @@ for (const name of ['enterpictureinpicture', 'leavepictureinpicture', 'webkitpre
 }
 for (const name of ['play', 'pause', 'ended', 'loadedmetadata', 'timeupdate', 'ratechange', 'seeked']) {
   video.addEventListener(name, updateMediaSession);
+  audio.addEventListener(name, updateMediaSession);
 }
+audio.addEventListener('play', () => { if (audioMode && coverPip.stream) video.play().catch(() => {}); });
+audio.addEventListener('pause', () => { if (audioMode && coverPip.stream) video.pause(); });
+video.addEventListener('play', () => { if (audioMode && pipActive() && audio.paused) playVideo(); });
+video.addEventListener('pause', () => { if (audioMode && pipActive() && !audio.paused) audio.pause(); });
 if ('mediaSession' in navigator) {
   const seek = (position) => {
-    if (Number.isFinite(video.duration)) video.currentTime = Math.max(0, Math.min(position, video.duration));
+    const media = activeMedia();
+    if (Number.isFinite(media.duration)) media.currentTime = Math.max(0, Math.min(position, media.duration));
   };
   const actions = {
     play: () => { if (queue) playVideo(); },
-    pause: () => video.pause(),
-    stop: () => { video.pause(); seek(0); },
+    pause: () => activeMedia().pause(),
+    stop: () => { activeMedia().pause(); seek(0); },
     seekto: ({ seekTime }) => seek(seekTime),
-    seekbackward: ({ seekOffset = 10 }) => seek(video.currentTime - seekOffset),
-    seekforward: ({ seekOffset = 10 }) => seek(video.currentTime + seekOffset),
+    seekbackward: ({ seekOffset = 10 }) => seek(activeMedia().currentTime - seekOffset),
+    seekforward: ({ seekOffset = 10 }) => seek(activeMedia().currentTime + seekOffset),
   };
   for (const [action, handler] of Object.entries(actions)) {
     setMediaAction(action, handler);
   }
 }
-video.addEventListener('ended', () => {
-  if (repeat === 1) { video.currentTime = 0; playVideo(); }
+function ended(event) {
+  if (event.target !== activeMedia()) return;
+  if (repeat === 1) { activeMedia().currentTime = 0; playVideo(); }
   else advance();
-});
-video.addEventListener('error', () => notice('영상을 불러오지 못했습니다. 연결 상태와 파일 권한을 확인해 주세요.', true));
+}
+video.addEventListener('ended', ended);
+audio.addEventListener('ended', ended);
+video.addEventListener('error', () => { if (!audioMode) notice('영상을 불러오지 못했습니다. 연결 상태와 파일 권한을 확인해 주세요.', true); });
+audio.addEventListener('error', () => { if (audioMode && audio.hasAttribute('src')) notice('MP3를 불러오지 못했습니다. 연결 상태를 확인하거나 외부 Chrome·Safari에서 다시 열어 주세요.', true); });
+
+let savingCover = false;
+async function changeCover(selected) {
+  if (savingCover || !audioMode) return;
+  const id = currentFile(), file = filesById.get(id);
+  savingCover = true;
+  $('choose-cover').disabled = $('reset-cover').disabled = true;
+  try {
+    let blob = null;
+    if (selected) blob = await covers.save(file, selected);
+    else { await api(`audio-covers/${id}`, { method: 'DELETE' }); delete file.coverVersion; }
+    if (audioMode && currentFile() === id) { ++covers.version; covers.set(blob); }
+    notice('MP3 이미지가 저장되었습니다.');
+  } catch (error) { explain(error); }
+  finally { savingCover = false; $('choose-cover').disabled = $('reset-cover').disabled = false; $('cover-input').value = ''; }
+}
+$('choose-cover').addEventListener('click', () => $('cover-input').click());
+$('cover-input').addEventListener('change', () => { if ($('cover-input').files[0]) changeCover($('cover-input').files[0]); });
+$('reset-cover').addEventListener('click', () => changeCover(null));
 init().catch((error) => { $('connection').textContent = '연결 실패'; explain(error); });
 
 $('login').addEventListener('click', () => startLogin().catch(explain));

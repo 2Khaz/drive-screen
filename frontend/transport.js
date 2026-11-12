@@ -8,18 +8,21 @@ let session = sessionStorage.getItem(storageKey) || '';
 const embedded = window.parent !== window || /^\d+\.discordsays\.com$/.test(location.hostname);
 const resumeKey = 'drive-screen-resume';
 
-export async function api(path, { method = 'GET', data } = {}) {
+export async function api(path, { method = 'GET', data, responseType, signal } = {}) {
   const base = embedded ? `${location.origin}/api` : config.apiBase.replace(/\/$/, '') + '/api';
   const response = await fetch(`${base}/${path}`, {
-    method, credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer',
+    method, credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer', signal,
     headers: { ...(session ? { authorization: `Bearer ${session}` } : {}), ...(data === undefined ? {} : { 'content-type': 'application/json' }) },
     ...(data === undefined ? {} : { body: JSON.stringify(data) }),
   });
   if (response.status === 204) return;
+  if (response.ok && responseType === 'blob') return response.blob();
   const payload = await response.json();
   if (!response.ok) {
     if (response.status === 401) { session = ''; sessionStorage.removeItem(storageKey); document.getElementById('login').hidden = embedded; }
-    throw new Error(payload.error || `요청이 실패했습니다 (${response.status}).`);
+    const error = new Error(payload.error || `요청이 실패했습니다 (${response.status}).`);
+    error.status = response.status;
+    throw error;
   }
   return payload;
 }

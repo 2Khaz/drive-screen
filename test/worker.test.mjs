@@ -29,6 +29,7 @@ function database() {
 test('owner auth, isolation, OAuth replay, signed commands, and direct-media authorization', async () => {
   const DB = database();
   DB.sqlite.exec(await readFile(new URL('../worker/migrations/0001_initial.sql', import.meta.url), 'utf8'));
+  DB.sqlite.exec(await readFile(new URL('../worker/migrations/0002_audio_covers.sql', import.meta.url), 'utf8'));
   const env = { DB, SESSION_SECRET: secret, DISCORD_ALLOWED_USERS: 'owner,second', DISCORD_CLIENT_ID: 'sample', DISCORD_CLIENT_SECRET: 'test-only', DISCORD_GUILD_ID: 'guild', FRONTEND_URL: 'https://example.github.io/drive-screen/', PUBLIC_API_URL: 'https://api.example.workers.dev', DRIVE_FOLDER_ID: 'test-folder' };
   const owner = await session();
   const second = await session('second');
@@ -44,7 +45,7 @@ test('owner auth, isolation, OAuth replay, signed commands, and direct-media aut
     if (url.endsWith('/oauth2/token') && url.includes('discord')) return Response.json({ access_token: 'sample-discord-token' });
     if (url.endsWith('/users/@me')) return Response.json({ id: 'owner', username: 'owner' });
     if (url === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'sample-drive-token', expires_in: 3600 });
-    if (url.startsWith('https://www.googleapis.com/drive/v3/files?')) { assert.equal(options.headers.authorization, 'Bearer sample-drive-token'); return Response.json({ files: [{ id: 'file-one', name: 'Sample.mp4', size: '1024', capabilities: { canDownload: true } }] }); }
+    if (url.startsWith('https://www.googleapis.com/drive/v3/files?')) { assert.equal(options.headers.authorization, 'Bearer sample-drive-token'); return Response.json({ files: [{ id: 'file-one', name: 'Sample.mp4', size: '1024', capabilities: { canDownload: true } }, { id: 'audio-one', name: 'Sample.MP3', mimeType: 'audio/mpeg', size: '2048', capabilities: { canDownload: true } }] }); }
     throw new Error('Unexpected outbound request');
   };
   try {
@@ -80,6 +81,21 @@ test('owner auth, isolation, OAuth replay, signed commands, and direct-media aut
     const media = await (await request('/api/media-auth/file-one')).json();
     assert.equal(media.token, 'sample-drive-token');
     assert.equal(media.file.size, 1024);
+    assert.equal((await (await request('/api/media-auth/audio-one')).json()).file.kind, 'audio');
+    const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aB1kAAAAASUVORK5CYII=';
+    assert.equal((await request('/api/audio-covers/audio-one', { method: 'PUT', data: { image } })).status, 200);
+    const cover = await request('/api/audio-covers/audio-one');
+    assert.equal(cover.headers.get('content-type'), 'image/png');
+    assert.equal(Buffer.from(await cover.arrayBuffer()).toString('base64'), image);
+    assert.equal((await request('/api/audio-covers/audio-one', { token: second })).status, 404);
+    assert.ok((await (await request('/api/library')).json()).find(f => f.id === 'audio-one').coverVersion > 0);
+    assert.equal((await request('/api/audio-covers/audio-one', { method: 'PUT', data: { image: btoa('not an image') } })).status, 400);
+    assert.equal((await request('/api/audio-covers/file-one', { method: 'PUT', data: { image } })).status, 404);
+    assert.equal((await request('/api/audio-covers/not-shared', { method: 'PUT', data: { image } })).status, 404);
+    assert.equal((await request('/api/audio-covers/audio-one', { token: second, method: 'DELETE' })).status, 204);
+    assert.equal((await request('/api/audio-covers/audio-one')).status, 200);
+    assert.equal((await request('/api/audio-covers/audio-one', { method: 'DELETE' })).status, 204);
+    assert.equal((await request('/api/audio-covers/audio-one')).status, 404);
     assert.ok(outbound.every(url => !url.includes('alt=media') && !url.includes('access_token=')));
     assert.equal((await request('/media/file-one')).status, 404);
     const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);

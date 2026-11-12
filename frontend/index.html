@@ -34,6 +34,8 @@
             <span>목록에서 영상을 선택해 주세요.</span>
           </div>
           <video id="video" controls playsinline preload="metadata" aria-label="영상 재생기" hidden></video>
+          <img id="audio-art" alt="MP3 커버 이미지" hidden>
+          <audio id="audio" controls preload="metadata" aria-label="MP3 재생기" hidden></audio>
         </div>
         <div class="player-details">
           <div><div class="eyebrow">지금 재생</div><h1 id="now-playing">영상을 골라 주세요</h1><p id="queue-info" class="muted"></p></div>
@@ -44,6 +46,12 @@
             <button id="repeat" type="button" aria-label="반복 모드 끔">반복 끔</button>
             <button id="pip" type="button" aria-pressed="false" disabled>작은 창(PiP)</button>
           </div>
+        </div>
+        <div id="cover-actions" class="cover-actions" hidden>
+          <button id="choose-cover" type="button">이미지 선택 / 변경</button>
+          <button id="reset-cover" type="button">기본 이미지</button>
+          <input id="cover-input" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+          <p class="muted">이 MP3의 이미지를 저장합니다. 작은 창에도 같은 이미지가 표시됩니다.</p>
         </div>
         <p id="playback-help" class="playback-help muted">다른 작업 중에도 재생할 수 있습니다. 절전 모드나 모바일 앱의 백그라운드 제한에서는 멈출 수 있습니다. 작은 창은 영상을 선택한 뒤 사용할 수 있습니다.</p>
       </div>
@@ -61,7 +69,7 @@
           <ol id="list-items" class="items"></ol>
         </section>
         <section class="panel library">
-          <div class="panel-heading"><h2>영상 보관함 <span id="library-count" class="count"></span></h2><button id="refresh" type="button">새로고침</button></div>
+          <div class="panel-heading"><h2>미디어 보관함 <span id="library-count" class="count"></span></h2><button id="refresh" type="button">새로고침</button></div>
           <label for="search" class="sr-only">영상 검색</label>
           <input id="search" type="search" placeholder="파일 이름 검색" autocomplete="off">
           <p id="library-empty" class="empty muted" hidden></p>

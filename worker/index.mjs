@@ -170,14 +170,15 @@ async function library(env, refresh = false) {
     if (!/^[\w-]+$/.test(env.DRIVE_FOLDER_ID || '')) throw new HttpError(503, 'Drive 폴더 설정이 필요합니다.');
     const files = [];
     const token = await googleToken(env);
-    const params = new URLSearchParams({ q: `'${env.DRIVE_FOLDER_ID}' in parents and trashed = false and mimeType = 'video/mp4'`, fields: 'nextPageToken,files(id,name,size,modifiedTime,capabilities(canDownload))', pageSize: '1000', orderBy: 'name_natural' });
+    const params = new URLSearchParams({ q: `'${env.DRIVE_FOLDER_ID}' in parents and trashed = false and (mimeType = 'video/mp4' or mimeType = 'audio/mpeg' or mimeType = 'audio/mp3' or name contains '.mp3' or name contains '.MP3')`, fields: 'nextPageToken,files(id,name,mimeType,size,modifiedTime,capabilities(canDownload))', pageSize: '1000', orderBy: 'name_natural' });
     do {
       const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, { headers: { authorization: `Bearer ${token.token}` }, signal: AbortSignal.timeout(15000) });
       if (!response.ok) { await response.body?.cancel(); throw new HttpError(502, 'Drive 영상 목록을 가져오지 못했습니다.'); }
       const data = await response.json();
       for (const file of data.files || []) {
         const size = Number(file.size);
-        if (file.capabilities?.canDownload && Number.isSafeInteger(size) && size > 0) files.push({ id: file.id, name: file.name, size, modifiedTime: file.modifiedTime });
+        const kind = /\.mp3$/i.test(file.name) || ['audio/mpeg', 'audio/mp3'].includes(file.mimeType) ? 'audio' : file.mimeType === 'video/mp4' || /\.mp4$/i.test(file.name) ? 'video' : null;
+        if (kind && file.capabilities?.canDownload && Number.isSafeInteger(size) && size > 0) files.push({ id: file.id, name: file.name, kind, mimeType: kind === 'audio' ? 'audio/mpeg' : 'video/mp4', size, modifiedTime: file.modifiedTime });
       }
       if (!data.nextPageToken) break;
       params.set('pageToken', data.nextPageToken);
@@ -235,7 +236,36 @@ async function route(request, env) {
   }
   const user = await requireUser(request, env);
   if (method === 'GET' && path === '/me') return json(user);
-  if (method === 'GET' && path === '/library') return json(await library(env, url.searchParams.has('refresh')));
+  if (method === 'GET' && path === '/library') {
+    const files = await library(env, url.searchParams.has('refresh'));
+    const covers = await env.DB.prepare('SELECT file_id, updated FROM audio_covers WHERE owner = ?').bind(user.id).all();
+    const versions = new Map(covers.results.map(cover => [cover.file_id, cover.updated]));
+    return json(files.map(file => ({ ...file, ...(file.kind === 'audio' ? { coverVersion: versions.get(file.id) || 0 } : {}) })));
+  }
+  const coverPath = /^\/audio-covers\/([\w-]{1,128})$/.exec(path);
+  if (coverPath && ['GET', 'PUT', 'DELETE'].includes(method)) {
+    const file = (await library(env)).find(file => file.id === coverPath[1] && file.kind === 'audio');
+    if (!file) throw new HttpError(404, '연결된 폴더에서 MP3를 찾을 수 없습니다.');
+    if (method === 'GET') {
+      const saved = await env.DB.prepare('SELECT image, mime FROM audio_covers WHERE owner = ? AND file_id = ?').bind(user.id, file.id).first();
+      if (!saved) throw new HttpError(404, '저장된 커버 이미지가 없습니다.');
+      return new Response(decode64(saved.image), { headers: { 'content-type': saved.mime } });
+    }
+    if (method === 'DELETE') {
+      await env.DB.prepare('DELETE FROM audio_covers WHERE owner = ? AND file_id = ?').bind(user.id, file.id).run();
+      return new Response(null, { status: 204 });
+    }
+    const input = await readJson(request);
+    if (typeof input?.image !== 'string' || input.image.length > 110000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(input.image)) throw new HttpError(400, '커버 이미지 형식을 확인해 주세요.');
+    let bytes;
+    try { bytes = decode64(input.image); } catch { throw new HttpError(400, '이미지를 읽지 못했습니다.'); }
+    const jpeg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
+    const png = [137,80,78,71,13,10,26,10].every((value, index) => bytes[index] === value);
+    if ((!jpeg && !png) || bytes.length > 80 * 1024) throw new HttpError(400, '커버는 80 KiB 이하의 JPG 또는 PNG여야 합니다.');
+    const updated = Date.now();
+    await env.DB.prepare('INSERT INTO audio_covers (owner, file_id, image, mime, updated) VALUES (?, ?, ?, ?, ?) ON CONFLICT(owner, file_id) DO UPDATE SET image = excluded.image, mime = excluded.mime, updated = excluded.updated').bind(user.id, file.id, input.image, jpeg ? 'image/jpeg' : 'image/png', updated).run();
+    return json({ fileId: file.id, coverVersion: updated });
+  }
   const media = /^\/media-auth\/([\w-]{1,128})$/.exec(path);
   if (method === 'GET' && media) {
     const file = (await library(env)).find(file => file.id === media[1]);

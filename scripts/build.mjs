@@ -23,6 +23,7 @@ await build({
   outfile: 'docs/app.js',
   legalComments: 'eof',
 });
+await build({ entryPoints: ['frontend/audio-sw.js'], bundle: true, minify: true, format: 'iife', outfile: 'docs/audio-sw.js' });
 for (const name of ['styles.css', 'icon.png']) await copyFile(`frontend/${name}`, `docs/${name}`);
 const digest = async name => createHash('sha256').update(await readFile(`docs/${name}`)).digest('hex').slice(0, 12);
 const html = (await readFile('frontend/index.html', 'utf8'))

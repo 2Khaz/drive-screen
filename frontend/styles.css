@@ -58,6 +58,10 @@ main { max-width: 1440px; margin: auto; padding: 0 clamp(14px, 3vw, 34px) 30px; 
 .placeholder > span:last-child { font-size: .79rem; }
 .hero-play { display: grid; place-items: center; width: clamp(36px, 7vw, 64px); aspect-ratio: 1; border: 1px solid #907cbd; border-radius: 50%; background: #524271; color: #e9dcff; }
 video { width: 100%; height: 100%; position: absolute; object-fit: contain; }
+#audio-art { position: absolute; inset: 0; width: 100%; height: calc(100% - 54px); object-fit: contain; background: #15111f; pointer-events: none; }
+#audio { position: absolute; bottom: 0; width: 100%; height: 54px; }
+.cover-actions { padding: 0 15px 14px; display: flex; gap: 7px; flex-wrap: wrap; }
+.cover-actions p { width: 100%; line-height: 1.6; }
 .player-details { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: center; padding: 15px; }
 .player-details > div:first-child { min-width: 0; }
 .eyebrow { font-size: .69rem; color: var(--accent); font-weight: 700; letter-spacing: .09em; }
