@@ -125,14 +125,14 @@ export class DrivePlayer {
       if (state.controller.signal.aborted) abort();
       const timer = setTimeout(() => fetchController.abort(new DOMException('Drive 요청 시간 초과', 'TimeoutError')), 30000);
       try {
-      const end = Math.min(state.auth.file.size - 1, offset + chunkSize - 1);
-      const response = await fetch(driveUrl(id), { headers: { authorization: `Bearer ${state.auth.token}`, range: `bytes=${offset}-${end}` }, credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer', signal: fetchController.signal });
-      if (response.status === 401 && attempt === 0) { await response.body?.cancel(); state.auth = await api(`media-auth/${id}`); continue; }
-      if (response.status !== 206) { await response.body?.cancel(); throw new Error(`Drive에서 영상 일부를 읽지 못했습니다 (${response.status}). 잠시 후 다시 시도해 주세요.`); }
-      const buffer = await response.arrayBuffer();
-      if (buffer.byteLength !== end - offset + 1) throw new Error('Drive에서 받은 영상 조각의 크기가 올바르지 않습니다.');
-      buffer.fileStart = offset;
-      return buffer;
+        const end = Math.min(state.auth.file.size - 1, offset + chunkSize - 1);
+        const response = await fetch(driveUrl(id), { headers: { authorization: `Bearer ${state.auth.token}`, range: `bytes=${offset}-${end}` }, credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer', signal: fetchController.signal });
+        if (response.status === 401 && attempt === 0) { await response.body?.cancel(); state.auth = await api(`media-auth/${id}`); continue; }
+        if (response.status !== 206) { await response.body?.cancel(); throw new Error(`Drive에서 영상 일부를 읽지 못했습니다 (${response.status}). 잠시 후 다시 시도해 주세요.`); }
+        const buffer = await response.arrayBuffer();
+        if (buffer.byteLength !== end - offset + 1) throw new Error('Drive에서 받은 영상 조각의 크기가 올바르지 않습니다.');
+        buffer.fileStart = offset;
+        return buffer;
       } finally { clearTimeout(timer); state.controller.signal.removeEventListener('abort', abort); }
     }
   }

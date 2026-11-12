@@ -72,7 +72,7 @@ npm run build
 | `PUBLIC_API_URL` | 변수 | Worker의 HTTPS 주소, 끝 슬래시 제외 |
 
 ```sh
-npx wrangler login
+npx wrangler login --scopes account:read user:read workers_scripts:write d1:write
 npx wrangler d1 create drive-screen
 npm run db:remote
 npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON
