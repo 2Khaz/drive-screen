@@ -2,6 +2,7 @@ import { DiscordSDK } from '@discord/embedded-app-sdk';
 
 const storageKey = 'drive-screen-session';
 let config;
+let sdk;
 let session = sessionStorage.getItem(storageKey) || '';
 const embedded = window.parent !== window;
 
@@ -37,7 +38,7 @@ export async function connect() {
   config = await response.json();
   if (!config.apiBase || !config.discordClientId) return 'pending';
   if (embedded) {
-    const sdk = new DiscordSDK(config.discordClientId);
+    sdk = new DiscordSDK(config.discordClientId);
     await sdk.ready();
     const { code } = await sdk.commands.authorize({ client_id: config.discordClientId, response_type: 'code', state: '', prompt: 'none', scope: ['identify'] });
     const login = await api('discord-login', { method: 'POST', data: { code } });
@@ -65,3 +66,11 @@ export function driveUrl(id) {
   const base = embedded ? `${location.origin}/gdrive` : 'https://www.googleapis.com';
   return `${base}/drive/v3/files/${encodeURIComponent(id)}?alt=media`;
 }
+
+export async function openInBrowser() {
+  const url = 'https://2khaz.github.io/drive-screen/';
+  if (sdk) await sdk.commands.openExternalLink({ url });
+  else window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+export const isDiscordActivity = embedded;

@@ -1,5 +1,5 @@
 import { nextQueue, reorderQueue, startQueue } from './queue.js';
-import { api, connect, startLogin } from './transport.js';
+import { api, connect, startLogin, openInBrowser, isDiscordActivity } from './transport.js';
 import { DrivePlayer } from './media.js';
 
 const $ = (id) => document.getElementById(id);
@@ -7,7 +7,9 @@ const video = $('video');
 const listPicker = $('list-picker');
 const dialog = $('list-dialog');
 const pipButton = $('pip');
-const pipSupported = Boolean(document.pictureInPictureEnabled && video.requestPictureInPicture);
+const standardPip = Boolean(document.pictureInPictureEnabled && video.requestPictureInPicture);
+const pipSupported = () => standardPip || Boolean(video.webkitSupportsPresentationMode?.('picture-in-picture'));
+const pipActive = () => document.pictureInPictureElement === video || video.webkitPresentationMode === 'picture-in-picture';
 const repeatModes = ['끔', '한 편', '전체'];
 let library = [];
 let playlists = [];
@@ -128,12 +130,12 @@ function renderTransport() {
 }
 
 function renderPip() {
-  const active = document.pictureInPictureElement === video;
+  const active = pipActive();
   pipButton.setAttribute('aria-pressed', String(active));
   pipButton.textContent = active ? '작은 창 닫기' : '작은 창(PiP)';
-  pipButton.disabled = changingPip || !pipSupported || (!active && (!video.videoWidth || !video.readyState));
-  if (!pipSupported) {
-    $('playback-help').textContent = '이 브라우저에서는 작은 창을 사용할 수 없습니다. Chrome 또는 Edge에서 열어 주세요. 탭을 열어두면 다른 작업 중에도 재생됩니다.';
+  pipButton.disabled = changingPip || !pipSupported() || (!active && (!video.videoWidth || !video.readyState));
+  if (!pipSupported()) {
+    $('playback-help').textContent = '이 앱 안에서는 작은 창을 지원하지 않을 수 있습니다. 브라우저에서 열어 기기의 재생기 기능을 사용해 주세요. 절전 모드나 모바일의 백그라운드 제한에서는 재생이 멈출 수 있습니다.';
   }
 }
 
@@ -324,15 +326,17 @@ pipButton.addEventListener('click', async () => {
   renderPip();
   try {
     if (document.pictureInPictureElement === video) await document.exitPictureInPicture();
-    else await video.requestPictureInPicture();
+    else if (video.webkitPresentationMode === 'picture-in-picture') video.webkitSetPresentationMode('inline');
+    else if (standardPip) await video.requestPictureInPicture();
+    else video.webkitSetPresentationMode('picture-in-picture');
   } catch (error) {
-    notice(error.name === 'NotAllowedError' ? '재생기에서 영상을 시작한 뒤 작은 창 버튼을 눌러 주세요.' : '작은 창을 열 수 없습니다. Chrome 또는 Edge에서 다시 시도해 주세요.', true);
+    notice(error.name === 'NotAllowedError' ? '재생기에서 영상을 시작한 뒤 작은 창 버튼을 눌러 주세요.' : '작은 창을 열 수 없습니다. 브라우저에서 열어 다시 시도해 주세요.', true);
   } finally {
     changingPip = false;
     renderPip();
   }
 });
-for (const name of ['enterpictureinpicture', 'leavepictureinpicture', 'loadedmetadata', 'emptied']) {
+for (const name of ['enterpictureinpicture', 'leavepictureinpicture', 'webkitpresentationmodechanged', 'loadedmetadata', 'emptied']) {
   video.addEventListener(name, renderPip);
 }
 for (const name of ['play', 'pause', 'ended', 'loadedmetadata', 'timeupdate', 'ratechange', 'seeked']) {
@@ -362,4 +366,6 @@ video.addEventListener('error', () => notice('영상을 불러오지 못했습�
 init().catch((error) => { $('connection').textContent = '연결 실패'; explain(error); });
 
 $('login').addEventListener('click', () => startLogin().catch(explain));
+$('open-browser').hidden = !isDiscordActivity;
+$('open-browser').addEventListener('click', () => openInBrowser().catch(explain));
 window.addEventListener('pagehide', () => player.close());

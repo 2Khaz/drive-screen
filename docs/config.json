@@ -1,4 +1,4 @@
 {
-  "apiBase": "",
-  "discordClientId": ""
+  "apiBase": "https://drive-screen-api.tripletrio97.workers.dev",
+  "discordClientId": "1570093167427059752"
 }
