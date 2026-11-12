@@ -18,7 +18,13 @@
   <main>
     <div id="notice" role="status" hidden></div>
     <button id="login" class="primary" type="button" hidden>Discord로 로그인</button>
-    <button id="open-browser" type="button" hidden>브라우저에서 열기</button>
+    <section id="browser-handoff" class="browser-handoff" aria-label="브라우저 재생" hidden>
+      <button id="open-browser" class="primary" type="button">브라우저로 이어재생</button>
+      <p>다른 앱과 함께 보려면 Chrome(Android) 또는 Safari(iPhone)에서 영상을 재생한 뒤 작은 창을 눌러 주세요. 선택한 영상과 재생 위치를 이어갑니다.</p>
+      <p class="muted">Discord 내부 브라우저가 열리면 메뉴에서 외부 브라우저로 열어 주세요. 최초에는 Discord 로그인이 필요합니다.</p>
+      <label class="sr-only" for="player-address">브라우저에서 열 플레이어 주소</label>
+      <input id="player-address" readonly value="https://2khaz.github.io/drive-screen/" aria-label="브라우저에서 열 플레이어 주소">
+    </section>
     <section class="workspace" id="workspace" hidden>
       <div class="watch">
         <div class="player">

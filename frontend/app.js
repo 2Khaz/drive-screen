@@ -1,5 +1,5 @@
 import { nextQueue, reorderQueue, startQueue } from './queue.js';
-import { api, connect, startLogin, openInBrowser, isDiscordActivity } from './transport.js';
+import { api, connect, startLogin, openInBrowser, isDiscordActivity, takePlaybackResume, capturePlaybackResume } from './transport.js';
 import { DrivePlayer } from './media.js';
 
 const $ = (id) => document.getElementById(id);
@@ -23,6 +23,7 @@ let saving = false;
 let refreshing = false;
 let dialogAction;
 let changingPip = false;
+let openingBrowser = false;
 
 
 function notice(message = '', error = false) {
@@ -131,12 +132,27 @@ function renderTransport() {
 
 function renderPip() {
   const active = pipActive();
+  const external = !pipSupported() && isDiscordActivity;
   pipButton.setAttribute('aria-pressed', String(active));
-  pipButton.textContent = active ? '작은 창 닫기' : '작은 창(PiP)';
-  pipButton.disabled = changingPip || !pipSupported() || (!active && (!video.videoWidth || !video.readyState));
-  if (!pipSupported()) {
-    $('playback-help').textContent = '이 앱 안에서는 작은 창을 지원하지 않을 수 있습니다. 브라우저에서 열어 기기의 재생기 기능을 사용해 주세요. 절전 모드나 모바일의 백그라운드 제한에서는 재생이 멈출 수 있습니다.';
-  }
+  pipButton.textContent = external ? '브라우저에서 PiP' : active ? '작은 창 닫기' : '작은 창(PiP)';
+  pipButton.disabled = changingPip || (!external && (!pipSupported() || (!active && (!video.videoWidth || !video.readyState))));
+  $('playback-help').textContent = external
+    ? '이 Discord 화면은 작은 창을 지원하지 않습니다. ‘브라우저로 이어재생’으로 이동해 영상을 재생한 뒤 작은 창을 눌러 주세요.'
+    : !pipSupported()
+      ? '이 브라우저는 작은 창 기능을 제공하지 않습니다. 최신 Chrome(Android) 또는 Safari(iPhone)에서 플레이어 주소를 열어 주세요.'
+      : !video.readyState
+        ? '영상을 선택하고 재생하면 작은 창 버튼을 사용할 수 있습니다.'
+        : '작은 창을 연 뒤 홈 화면으로 이동하면 다른 앱과 함께 볼 수 있습니다. 화면 잠금·절전·기기 설정에 따라 재생이 멈출 수 있습니다.';
+}
+
+async function continueInBrowser() {
+  if (openingBrowser) return;
+  openingBrowser = true;
+  $('open-browser').disabled = true;
+  try {
+    await openInBrowser(currentFile() ? { fileId: currentFile(), time: video.currentTime, playlistId: selectedId, repeat, shuffle } : null);
+    if (currentFile()) video.pause();
+  } finally { openingBrowser = false; $('open-browser').disabled = false; }
 }
 
 function updateMediaSession() {
@@ -223,7 +239,7 @@ function playVideo() {
   });
 }
 
-async function loadCurrent() {
+async function loadCurrent(startTime = 0) {
   const version = ++loadVersion;
   const id = currentFile();
   $('placeholder').hidden = true;
@@ -237,17 +253,24 @@ async function loadCurrent() {
   try {
     await player.load(id);
     if (version !== loadVersion) return;
+    if (startTime > 0) {
+      const resume = () => {
+        if (version === loadVersion && Number.isFinite(video.duration) && video.duration > 0) video.currentTime = Math.min(startTime, Math.max(0, video.duration - 0.25));
+      };
+      if (video.readyState) resume();
+      else video.addEventListener('loadedmetadata', resume, { once: true });
+    }
     notice();
     playVideo();
   } catch (error) { if (error.name !== 'AbortError' && version === loadVersion) explain(error); }
 }
 
-function begin(ids, selected, name) {
+function begin(ids, selected, name, startTime = 0) {
   const started = startQueue(ids, selected, shuffle);
   if (!started) return;
   queue = started;
   queueName = name;
-  loadCurrent();
+  loadCurrent(startTime);
 }
 
 function advance() {
@@ -283,6 +306,18 @@ async function init() {
   render();
   renderPip();
   $('workspace').hidden = false;
+  resumePlayback();
+}
+
+function resumePlayback() {
+  const resume = takePlaybackResume();
+  if (resume && filesById.has(resume.fileId)) {
+    const list = playlists.find(list => list.id === resume.playlistId && list.items.includes(resume.fileId));
+    if (list) selectedId = list.id;
+    shuffle = resume.shuffle;
+    repeat = resume.repeat;
+    begin(list ? playable(list.items) : library.map(file => file.id), resume.fileId, list?.name || '영상 보관함', resume.time);
+  } else if (resume) notice('이전 영상을 연결된 Drive 폴더에서 찾을 수 없습니다.', true);
 }
 
 listPicker.addEventListener('change', () => { selectedId = listPicker.value; render(); });
@@ -325,12 +360,14 @@ pipButton.addEventListener('click', async () => {
   changingPip = true;
   renderPip();
   try {
-    if (document.pictureInPictureElement === video) await document.exitPictureInPicture();
+    if (!pipSupported() && isDiscordActivity) await continueInBrowser();
+    else if (document.pictureInPictureElement === video) await document.exitPictureInPicture();
     else if (video.webkitPresentationMode === 'picture-in-picture') video.webkitSetPresentationMode('inline');
     else if (standardPip) await video.requestPictureInPicture();
     else video.webkitSetPresentationMode('picture-in-picture');
   } catch (error) {
-    notice(error.name === 'NotAllowedError' ? '재생기에서 영상을 시작한 뒤 작은 창 버튼을 눌러 주세요.' : '작은 창을 열 수 없습니다. 브라우저에서 열어 다시 시도해 주세요.', true);
+    if (!pipSupported() && isDiscordActivity) explain(error);
+    else notice(error.name === 'NotAllowedError' ? '재생기에서 영상을 시작한 뒤 작은 창 버튼을 눌러 주세요.' : '작은 창을 열 수 없습니다. 브라우저에서 열어 다시 시도해 주세요.', true);
   } finally {
     changingPip = false;
     renderPip();
@@ -366,6 +403,9 @@ video.addEventListener('error', () => notice('영상을 불러오지 못했습�
 init().catch((error) => { $('connection').textContent = '연결 실패'; explain(error); });
 
 $('login').addEventListener('click', () => startLogin().catch(explain));
-$('open-browser').hidden = !isDiscordActivity;
-$('open-browser').addEventListener('click', () => openInBrowser().catch(explain));
+$('browser-handoff').hidden = !isDiscordActivity;
+$('open-browser').addEventListener('click', () => continueInBrowser().catch(explain));
+window.addEventListener('hashchange', () => {
+  if (capturePlaybackResume() && !$('workspace').hidden) resumePlayback();
+});
 window.addEventListener('pagehide', () => player.close());

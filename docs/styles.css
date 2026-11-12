@@ -29,7 +29,10 @@ body {
   padding-bottom: var(--discord-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
   padding-left: var(--discord-safe-area-inset-left, env(safe-area-inset-left, 0px));
 }
-#open-browser { margin-bottom: 12px; }
+.browser-handoff { border: 1px solid var(--edge); border-radius: 12px; padding: 13px; margin-bottom: 14px; background: var(--panel); }
+.browser-handoff p { font-size: .82rem; line-height: 1.6; margin-top: 9px; }
+.browser-handoff .muted { font-size: .75rem; }
+.browser-handoff input { margin-top: 9px; font-size: .73rem; }
 .masthead {
   max-width: 1440px; margin: auto; padding: 19px clamp(14px, 3vw, 34px);
   display: flex; gap: 12px; justify-content: space-between; align-items: center;

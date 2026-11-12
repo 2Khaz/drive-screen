@@ -1,5 +1,6 @@
 import { build } from 'esbuild';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 
 await mkdir('docs', { recursive: true });
 let config;
@@ -22,7 +23,12 @@ await build({
   outfile: 'docs/app.js',
   legalComments: 'eof',
 });
-for (const name of ['index.html', 'styles.css', 'icon.png']) await copyFile(`frontend/${name}`, `docs/${name}`);
+for (const name of ['styles.css', 'icon.png']) await copyFile(`frontend/${name}`, `docs/${name}`);
+const digest = async name => createHash('sha256').update(await readFile(`docs/${name}`)).digest('hex').slice(0, 12);
+const html = (await readFile('frontend/index.html', 'utf8'))
+  .replace('./app.js', `./app.js?v=${await digest('app.js')}`)
+  .replace('./styles.css', `./styles.css?v=${await digest('styles.css')}`);
+await writeFile('docs/index.html', html);
 await writeFile('docs/config.json', JSON.stringify({ apiBase: config.apiBase || '', discordClientId: config.discordClientId || '' }, null, 2) + '\n');
 await writeFile('docs/.nojekyll', '');
 console.log('GitHub Pages output prepared in docs/.');

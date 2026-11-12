@@ -152,6 +152,13 @@ export class DrivePlayer {
         state.parser.start();
         eof = false;
       }
+      // A small MP4 may already be entirely consumed while reading its moov.
+      // Finish it without issuing an invalid Range starting at the file size.
+      if (state.ready && !eof && state.offset >= state.auth.file.size) {
+        state.parser.flush();
+        eof = true;
+        continue;
+      }
       for (const track of state.tracks) {
         const before = this.video.currentTime - 30;
         if (before > 0 && track.buffer.buffered.length && track.buffer.buffered.start(0) < before) await this.update(state, track.buffer, () => track.buffer.remove(0, before));

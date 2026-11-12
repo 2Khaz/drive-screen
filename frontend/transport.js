@@ -1,10 +1,12 @@
 import { DiscordSDK } from '@discord/embedded-app-sdk';
+import { parseResume, playbackLink } from './handoff.js';
 
 const storageKey = 'drive-screen-session';
 let config;
 let sdk;
 let session = sessionStorage.getItem(storageKey) || '';
-const embedded = window.parent !== window;
+const embedded = window.parent !== window || /^\d+\.discordsays\.com$/.test(location.hostname);
+const resumeKey = 'drive-screen-resume';
 
 export async function api(path, { method = 'GET', data } = {}) {
   const base = embedded ? `${location.origin}/api` : config.apiBase.replace(/\/$/, '') + '/api';
@@ -32,7 +34,21 @@ export async function startLogin() {
   location.assign(`${config.apiBase.replace(/\/$/, '')}/auth/start?challenge=${challenge}`);
 }
 
+export function capturePlaybackResume() {
+  const incoming = new URLSearchParams(location.hash.slice(1));
+  if (incoming.has('resume')) {
+    const resume = parseResume(incoming.get('resume'));
+    if (resume) sessionStorage.setItem(resumeKey, JSON.stringify({ resume, expires: Date.now() + 15 * 60000 }));
+    else sessionStorage.removeItem(resumeKey);
+    incoming.delete('resume');
+    history.replaceState(null, '', location.pathname + location.search + (incoming.size ? `#${incoming}` : ''));
+    return true;
+  }
+  return false;
+}
+
 export async function connect() {
+  capturePlaybackResume();
   const response = await fetch(new URL('./config.json', location.href), { cache: 'no-store' });
   if (!response.ok) throw new Error('플레이어 설정을 가져오지 못했습니다.');
   config = await response.json();
@@ -67,10 +83,22 @@ export function driveUrl(id) {
   return `${base}/drive/v3/files/${encodeURIComponent(id)}?alt=media`;
 }
 
-export async function openInBrowser() {
-  const url = 'https://2khaz.github.io/drive-screen/';
-  if (sdk) await sdk.commands.openExternalLink({ url });
+export async function openInBrowser(resume) {
+  const url = playbackLink('https://2khaz.github.io/drive-screen/', resume);
+  if (sdk) {
+    const result = await sdk.commands.openExternalLink({ url });
+    if (result.opened === false) throw new Error('브라우저 열기가 취소됐습니다. 아래 플레이어 주소를 Chrome 또는 Safari에서 열어 주세요.');
+  }
   else window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 export const isDiscordActivity = embedded;
+
+export function takePlaybackResume() {
+  const text = sessionStorage.getItem(resumeKey);
+  sessionStorage.removeItem(resumeKey);
+  try {
+    const saved = JSON.parse(text);
+    return saved?.expires > Date.now() ? parseResume(JSON.stringify(saved.resume)) : null;
+  } catch { return null; }
+}
