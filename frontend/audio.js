@@ -1,4 +1,4 @@
-import { api } from './transport.js';
+import { mediaAuth } from './transport.js';
 
 const providers = new Map();
 let registrationPromise;
@@ -45,11 +45,10 @@ export class AudioPlayer {
     this.state = state;
     const authorize = async force => {
       if (state.controller.signal.aborted) throw new DOMException('재생이 변경됐습니다.', 'AbortError');
-      if (force || !state.auth || state.auth.expiresAt < Date.now() + 60000) state.auth = await api(`media-auth/${id}`, { signal: state.controller.signal });
+      if (force || !state.auth || state.auth.expiresAt < Date.now() + 60000) state.auth = await mediaAuth(id, { force, signal: state.controller.signal });
       return state.auth;
     };
-    await authorize(false);
-    const registration = await workerRegistration();
+    const [, registration] = await Promise.all([authorize(false), workerRegistration()]);
     if (state.controller.signal.aborted) throw new DOMException('재생이 변경됐습니다.', 'AbortError');
     providers.set(id, authorize);
     this.audio.src = new URL(`__audio/${encodeURIComponent(id)}.mp3`, registration.scope).href;

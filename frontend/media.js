@@ -1,5 +1,5 @@
 import { createFile } from 'mp4box';
-import { api, driveUrl } from './transport.js';
+import { mediaAuth, driveUrl } from './transport.js';
 import { RangeCache } from './range-cache.js';
 
 const MiB = 1024 * 1024;
@@ -42,6 +42,9 @@ export class DrivePlayer {
     this.state = state;
     const { video } = this;
     const { signal } = state.controller;
+    const authPromise = mediaAuth(id, { signal });
+    // Observe failures while MediaSource opens; both preparations run together.
+    authPromise.catch(() => {});
     // iPhone activates ManagedMediaSource only with an AirPlay alternative or
     // remote playback disabled. There is no anonymous AirPlay URL for Drive.
     if (window.ManagedMediaSource) video.disableRemotePlayback = true;
@@ -56,7 +59,7 @@ export class DrivePlayer {
       signal.addEventListener('abort', aborted, { once: true });
     });
     if (signal.aborted) throw abortError();
-    const auth = await api(`media-auth/${id}`);
+    const auth = await authPromise;
     if (signal.aborted) throw abortError();
     state.auth = auth;
     state.parser.onError = () => this.fail(state, new Error('MP4 정보를 읽지 못했습니다. 파일이 손상되었거나 지원하지 않는 형식입니다.'));
@@ -130,7 +133,7 @@ export class DrivePlayer {
   async read(state, id, offset, consume) {
     const cached = state.cache.get(offset);
     if (cached) { await consume(cached); return; }
-    if (state.auth.expiresAt < Date.now() + 60000) state.auth = await api(`media-auth/${id}`);
+    if (state.auth.expiresAt < Date.now() + 60000) state.auth = await mediaAuth(id, { signal: state.controller.signal });
     for (let attempt = 0; attempt < 2; attempt++) {
       state.fetchController = new AbortController();
       const fetchController = state.fetchController;
@@ -145,7 +148,7 @@ export class DrivePlayer {
         let response;
         try { response = await fetch(driveUrl(id), { headers: { authorization: `Bearer ${state.auth.token}`, range: `bytes=${offset}-${end}` }, credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer', signal: fetchController.signal }); }
         catch (error) { error.retryable = true; throw error; }
-        if (response.status === 401 && attempt === 0) { await response.body?.cancel(); state.auth = await api(`media-auth/${id}`); continue; }
+        if (response.status === 401 && attempt === 0) { await response.body?.cancel(); state.auth = await mediaAuth(id, { force: true, signal: state.controller.signal }); continue; }
         if (response.status !== 206) {
           await response.body?.cancel();
           const error = new Error(`Drive에서 영상 일부를 읽지 못했습니다 (${response.status}). 잠시 후 다시 시도해 주세요.`);

@@ -1,9 +1,9 @@
 import { api } from './transport.js';
 
-export const defaultCover = new URL('./icon.png', location.href).href;
+export const defaultCover = new URL('./cover.webp', location.href).href;
 
 export class CoverImages {
-  constructor(image, onChange) { this.image = image; this.onChange = onChange; this.version = 0; this.image.src = defaultCover; }
+  constructor(image, onChange) { this.image = image; this.onChange = onChange; this.version = 0; }
   set(blob) {
     if (this.url) URL.revokeObjectURL(this.url);
     this.url = blob ? URL.createObjectURL(blob) : null;

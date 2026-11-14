@@ -190,6 +190,20 @@ async function library(env, refresh = false) {
   finally { if (libraryPending === state) libraryPending = undefined; }
 }
 
+async function userLibrary(env, user, refresh = false) {
+  const [files, covers] = await Promise.all([
+    library(env, refresh),
+    env.DB.prepare('SELECT file_id, updated FROM audio_covers WHERE owner = ?').bind(user.id).all(),
+  ]);
+  const versions = new Map(covers.results.map(cover => [cover.file_id, cover.updated]));
+  return files.map(file => ({ ...file, ...(file.kind === 'audio' ? { coverVersion: versions.get(file.id) || 0 } : {}) }));
+}
+
+async function userPlaylists(env, user) {
+  const result = await env.DB.prepare('SELECT id, name, items FROM playlists WHERE owner = ? ORDER BY created, id').bind(user.id).all();
+  return result.results.map(entry => ({ ...entry, items: JSON.parse(entry.items) }));
+}
+
 function playlistInput(data) {
   const name = typeof data?.name === 'string' ? data.name.trim() : '';
   const items = data?.items;
@@ -236,11 +250,12 @@ async function route(request, env) {
   }
   const user = await requireUser(request, env);
   if (method === 'GET' && path === '/me') return json(user);
+  if (method === 'GET' && path === '/bootstrap') {
+    const [files, playlists, access] = await Promise.all([userLibrary(env, user), userPlaylists(env, user), googleToken(env)]);
+    return json({ user, files, playlists, mediaAccess: { token: access.token, expiresAt: access.expiresAt } });
+  }
   if (method === 'GET' && path === '/library') {
-    const files = await library(env, url.searchParams.has('refresh'));
-    const covers = await env.DB.prepare('SELECT file_id, updated FROM audio_covers WHERE owner = ?').bind(user.id).all();
-    const versions = new Map(covers.results.map(cover => [cover.file_id, cover.updated]));
-    return json(files.map(file => ({ ...file, ...(file.kind === 'audio' ? { coverVersion: versions.get(file.id) || 0 } : {}) })));
+    return json(await userLibrary(env, user, url.searchParams.has('refresh')));
   }
   const coverPath = /^\/audio-covers\/([\w-]{1,128})$/.exec(path);
   if (coverPath && ['GET', 'PUT', 'DELETE'].includes(method)) {
@@ -274,8 +289,7 @@ async function route(request, env) {
     return json({ token: token.token, expiresAt: token.expiresAt, file });
   }
   if (method === 'GET' && path === '/playlists') {
-    const result = await env.DB.prepare('SELECT id, name, items FROM playlists WHERE owner = ? ORDER BY created, id').bind(user.id).all();
-    return json(result.results.map(entry => ({ ...entry, items: JSON.parse(entry.items) })));
+    return json(await userPlaylists(env, user));
   }
   if (method === 'POST' && path === '/playlists') {
     const entry = { id: crypto.randomUUID(), ...playlistInput(await readJson(request)) };

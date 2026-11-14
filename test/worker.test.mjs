@@ -50,6 +50,8 @@ test('owner auth, isolation, OAuth replay, signed commands, and direct-media aut
   };
   try {
     assert.equal((await request('/api/library', { token: null })).status, 401);
+    assert.equal((await request('/api/bootstrap', { token: null })).status, 401);
+    assert.equal((await request('/api/bootstrap', { token: await session('outsider') })).status, 401);
     assert.equal((await request('/api/me', { token: owner + 'tampered' })).status, 401);
     assert.equal((await request('/api/me', { token: await session('outsider') })).status, 401);
     assert.equal((await request('/api/me', { token: await session('owner', 1) })).status, 401);
@@ -88,6 +90,15 @@ test('owner auth, isolation, OAuth replay, signed commands, and direct-media aut
     assert.equal(cover.headers.get('content-type'), 'image/png');
     assert.equal(Buffer.from(await cover.arrayBuffer()).toString('base64'), image);
     assert.equal((await request('/api/audio-covers/audio-one', { token: second })).status, 404);
+    const initial = await request('/api/bootstrap');
+    assert.equal(initial.headers.get('cache-control'), 'private, no-store');
+    const bootstrap = await initial.json();
+    assert.equal(bootstrap.user.id, 'owner');
+    assert.equal(bootstrap.mediaAccess.token, 'sample-drive-token');
+    assert.ok(bootstrap.files.find(file => file.id === 'audio-one').coverVersion > 0);
+    const other = await (await request('/api/bootstrap', { token: second })).json();
+    assert.equal(other.files.find(file => file.id === 'audio-one').coverVersion, 0);
+    assert.deepEqual(other.playlists, []);
     assert.ok((await (await request('/api/library')).json()).find(f => f.id === 'audio-one').coverVersion > 0);
     assert.equal((await request('/api/audio-covers/audio-one', { method: 'PUT', data: { image: btoa('not an image') } })).status, 400);
     assert.equal((await request('/api/audio-covers/file-one', { method: 'PUT', data: { image } })).status, 404);

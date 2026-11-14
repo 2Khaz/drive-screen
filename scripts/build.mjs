@@ -15,18 +15,32 @@ if (config.apiBase) {
     throw new Error('Public API must use HTTPS.');
   }
 }
-await build({
+const built = await build({
   entryPoints: ['frontend/app.js'],
   bundle: true,
   minify: true,
   format: 'esm',
-  outfile: 'docs/app.js',
+  outdir: 'docs',
+  splitting: true,
+  chunkNames: 'chunks/[name]-[hash]',
   legalComments: 'eof',
+  metafile: true,
 });
 await build({ entryPoints: ['frontend/audio-sw.js'], bundle: true, minify: true, format: 'iife', outfile: 'docs/audio-sw.js' });
-for (const name of ['styles.css', 'icon.png']) await copyFile(`frontend/${name}`, `docs/${name}`);
+for (const name of ['styles.css', 'icon.png', 'icon-small.png', 'cover.webp']) await copyFile(`frontend/${name}`, `docs/${name}`);
 const digest = async name => createHash('sha256').update(await readFile(`docs/${name}`)).digest('hex').slice(0, 12);
+const shared = new Set();
+function preload(path) {
+  for (const entry of built.metafile.outputs[path]?.imports || []) {
+    if (entry.external || entry.kind === 'dynamic-import' || shared.has(entry.path)) continue;
+    shared.add(entry.path); preload(entry.path);
+  }
+}
+preload('docs/app.js');
+const preloads = [...shared].map(path => `  <link rel="modulepreload" href="./${path.replace(/^docs\//, '')}">`).join('\n');
 const html = (await readFile('frontend/index.html', 'utf8'))
+  .replace('  <script type="module"', `${preloads}\n  <script type="module"`)
+  .replace('<script type="module"', `<script id="player-config" type="application/json">${JSON.stringify({ apiBase: config.apiBase || '', discordClientId: config.discordClientId || '' }).replace(/</g, '\\u003c')}</script>\n  <script type="module"`)
   .replace('./app.js', `./app.js?v=${await digest('app.js')}`)
   .replace('./styles.css', `./styles.css?v=${await digest('styles.css')}`);
 await writeFile('docs/index.html', html);

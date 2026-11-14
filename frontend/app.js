@@ -1,6 +1,5 @@
 import { nextQueue, reorderQueue, startQueue } from './queue.js';
-import { api, connect, startLogin, openInBrowser, isDiscordActivity, takePlaybackResume, capturePlaybackResume } from './transport.js';
-import { DrivePlayer } from './media.js';
+import { api, bootstrap, mediaAuth, setMediaFiles, connect, startLogin, openInBrowser, isDiscordActivity, takePlaybackResume, capturePlaybackResume } from './transport.js';
 import { AudioPlayer } from './audio.js';
 import { CoverPip } from './cover-pip.js';
 import { CoverImages } from './covers.js';
@@ -38,7 +37,9 @@ function notice(message = '', error = false) {
 }
 
 function explain(error) { notice(error.message, true); }
-const videoPlayer = new DrivePlayer(video, explain);
+let videoPlayer;
+let videoModule;
+const prepareVideo = () => videoModule ||= import('./media.js').catch(error => { videoModule = null; throw error; });
 const audioPlayer = new AudioPlayer(audio);
 const coverPip = new CoverPip(video, $('audio-art'));
 const covers = new CoverImages($('audio-art'), updateMetadata);
@@ -49,16 +50,22 @@ const player = {
     const file = filesById.get(id);
     const nextAudio = file?.kind === 'audio';
     audioPlayer.close();
-    if (!nextAudio || !audioMode) { coverPip.stop(); videoPlayer.close(); }
+    if (!nextAudio || !audioMode) { coverPip.stop(); videoPlayer?.close(); }
     audioMode = nextAudio;
     audio.hidden = $('audio-art').hidden = $('cover-actions').hidden = !nextAudio;
     if (nextAudio) {
       covers.load(file).catch(error => { if (currentFile() === id && error.status !== 404) explain(error); });
       coverPip.start();
       await audioPlayer.load(id);
-    } else { await videoPlayer.load(id); }
+    } else {
+      const version = loadVersion;
+      const [module] = await Promise.all([prepareVideo(), mediaAuth(id)]);
+      if (version !== loadVersion) throw new DOMException('재생 요청이 바뀌었습니다.', 'AbortError');
+      videoPlayer ||= new module.DrivePlayer(video, explain);
+      await videoPlayer.load(id);
+    }
   },
-  close() { audioPlayer.close(); coverPip.stop(); videoPlayer.close(); },
+  close() { ++loadVersion; audioPlayer.close(); coverPip.stop(); videoPlayer?.close(); },
 };
 let loadVersion = 0;
 
@@ -324,13 +331,15 @@ function previousVideo() {
 function setLibrary(files) {
   library = files;
   filesById = new Map(files.map((file) => [file.id, file]));
+  setMediaFiles(files);
 }
 
 async function init() {
   const connected = await connect();
   if (connected === 'pending') { $('connection').textContent = '배포 준비 중'; notice('서버 연결을 준비 중입니다. 배포가 끝난 뒤 다시 열어 주세요.'); return; }
   if (!connected) { $('connection').textContent = '로그인 필요'; return; }
-  const [user, files, lists] = await Promise.all([api('me'), api('library'), api('playlists')]);
+  const { user, files, playlists: lists } = await bootstrap();
+  if (files.some(file => file.kind !== 'audio')) prepareVideo().catch(() => {});
   $('connection').textContent = `Drive 연결됨 · ${user.name}`;
   $('login').hidden = true;
   setLibrary(files);

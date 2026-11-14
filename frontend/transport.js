@@ -1,5 +1,5 @@
-import { DiscordSDK } from '@discord/embedded-app-sdk';
 import { parseResume, playbackLink } from './handoff.js';
+import { MediaAccess } from './media-access.js';
 
 const storageKey = 'drive-screen-session';
 let config;
@@ -7,6 +7,15 @@ let sdk;
 let session = sessionStorage.getItem(storageKey) || '';
 const embedded = window.parent !== window || /^\d+\.discordsays\.com$/.test(location.hostname);
 const resumeKey = 'drive-screen-resume';
+const mediaAccess = new MediaAccess((id, signal) => api(`media-auth/${id}`, { signal }));
+export const mediaAuth = (id, options) => mediaAccess.get(id, options);
+export const setMediaFiles = files => mediaAccess.setFiles(files);
+
+export async function bootstrap() {
+  const value = await api('bootstrap');
+  mediaAccess.seed(value.files, value.mediaAccess);
+  return value;
+}
 
 export async function api(path, { method = 'GET', data, responseType, signal } = {}) {
   const base = embedded ? `${location.origin}/api` : config.apiBase.replace(/\/$/, '') + '/api';
@@ -19,7 +28,7 @@ export async function api(path, { method = 'GET', data, responseType, signal } =
   if (response.ok && responseType === 'blob') return response.blob();
   const payload = await response.json();
   if (!response.ok) {
-    if (response.status === 401) { session = ''; sessionStorage.removeItem(storageKey); document.getElementById('login').hidden = embedded; }
+    if (response.status === 401) { session = ''; mediaAccess.clear(); sessionStorage.removeItem(storageKey); document.getElementById('login').hidden = embedded; }
     const error = new Error(payload.error || `요청이 실패했습니다 (${response.status}).`);
     error.status = response.status;
     throw error;
@@ -27,7 +36,7 @@ export async function api(path, { method = 'GET', data, responseType, signal } =
   return payload;
 }
 
-function saveSession(value) { session = value; sessionStorage.setItem(storageKey, value); }
+function saveSession(value) { mediaAccess.clear(); session = value; sessionStorage.setItem(storageKey, value); }
 function base64url(bytes) { return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 
 export async function startLogin() {
@@ -52,11 +61,16 @@ export function capturePlaybackResume() {
 
 export async function connect() {
   capturePlaybackResume();
-  const response = await fetch(new URL('./config.json', location.href), { cache: 'no-store' });
-  if (!response.ok) throw new Error('플레이어 설정을 가져오지 못했습니다.');
-  config = await response.json();
+  const inline = document.getElementById('player-config');
+  if (inline) config = JSON.parse(inline.textContent);
+  else {
+    const response = await fetch(new URL('./config.json', location.href), { cache: 'no-store' });
+    if (!response.ok) throw new Error('플레이어 설정을 가져오지 못했습니다.');
+    config = await response.json();
+  }
   if (!config.apiBase || !config.discordClientId) return 'pending';
   if (embedded) {
+    const { DiscordSDK } = await import('@discord/embedded-app-sdk');
     sdk = new DiscordSDK(config.discordClientId);
     await sdk.ready();
     const { code } = await sdk.commands.authorize({ client_id: config.discordClientId, response_type: 'code', state: '', prompt: 'none', scope: ['identify'] });
